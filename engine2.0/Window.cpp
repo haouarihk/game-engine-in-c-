@@ -1,6 +1,14 @@
 #include <windows.h>
 #include <iostream>
 #include "Utils.cpp"
+
+void earlySetup(){};
+void setup();
+void earlyUpdate(){};
+void draw();
+
+void CreateCanvas(float width, float height);
+
 // make WndProc function
 LRESULT __stdcall WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
@@ -11,12 +19,12 @@ LRESULT __stdcall WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
         SendMessage(GetDlgItem(hWnd, 1), uMsg, wParam, lParam);
         break;
 
-    case WM_KEYDOWN:
-        KeyDown(wParam);
-        break;
-    case WM_KEYLAST:
-        KeyDown(wParam);
-        break;
+    // case WM_KEYDOWN:
+    //     KeyDown(wParam);
+    //     break;
+    // case WM_KEYLAST:
+    //     KeyDown(wParam);
+    //     break;
     case WM_DESTROY:
         PostQuitMessage(WM_QUIT);
         break;
@@ -29,10 +37,14 @@ LRESULT __stdcall WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 class Window
 {
 public:
+    // callback functions
+
     HINSTANCE hInstance;
     HWND hWnd;
     HDC hDC;
     int width, height;
+
+    bool running = true;
 
     BITMAPINFO bitmap_info;
     void *buffer_memory;
@@ -41,7 +53,7 @@ public:
     int buffer_size;
 
     Window(){};
-    void setup(HINSTANCE hInstance, int width, int height, const wchar_t *title)
+    void init(HINSTANCE hInstance, int width, int height, const wchar_t *title)
     {
         this->hInstance = hInstance;
         this->width = width;
@@ -70,6 +82,20 @@ public:
 
         ShowWindow(hWnd, SW_SHOW);
         updateSize();
+
+        // setup
+        earlySetup();
+        setup();
+
+        // update
+        while (running)
+        {
+            update();
+            if (!handleMessages())
+            {
+                running = false;
+            };
+        }
     };
     bool handleMessages()
     {
@@ -102,10 +128,14 @@ public:
         // create bitmap
         bitmap_info.bmiHeader.biSize = sizeof(bitmap_info.bmiHeader);
         bitmap_info.bmiHeader.biWidth = buffer_width;
-        bitmap_info.bmiHeader.biHeight = buffer_height;
+        bitmap_info.bmiHeader.biHeight = -buffer_height;
         bitmap_info.bmiHeader.biPlanes = 1;
         bitmap_info.bmiHeader.biBitCount = 32;
-        bitmap_info.bmiHeader.biCompression = BI_RGB;
+    }
+
+    void resizeWindow(float width, float height)
+    {
+        SetWindowPos(hWnd, NULL, 0, 0, width, height, SWP_NOMOVE | SWP_NOZORDER);
     }
 
     void clear()
@@ -114,8 +144,13 @@ public:
     }
     void update()
     {
+
+        earlyUpdate();
+
         // update window
         StretchDIBits(hDC, 0, 0, buffer_width, buffer_height, 0, 0, buffer_width, buffer_height, buffer_memory, &bitmap_info, DIB_RGB_COLORS, SRCCOPY);
+
+        draw();
     }
 
     void drawBackground(RGBA color)
@@ -136,26 +171,51 @@ public:
         }
     }
 
-    void drawBox(float x, float y, float w, float h, RGBA rgba)
+    void drawRect(float x, float y, float w, float h, bool isStroke, bool isFill, float strokeWeight, RGBA strokeColor, RGBA fillColor)
     {
         unsigned int *pixels = (unsigned int *)buffer_memory;
-        // draw box
-        for (int i = 0; i < w; i++)
-        {
-            for (int j = 0; j < h; j++)
+
+        // draw the outline
+        if (isStroke)
+            for (int j = -strokeWeight / 2; j < strokeWeight / 2; j++)
             {
-                // if in the bound
-                if (x + i >= 0 && x + i < buffer_width && y + j >= 0 && y + j < buffer_height)
+                for (int i = -strokeWeight / 2; i < w + strokeWeight / 2; i++)
                 {
-                    float diffx = x + 1 - (int)x;
-                    float diffy = y + 1 - (int)y;
-                    pixels[(((int)x) + i + (((int)y) + j) * buffer_width)] = rgba.ChangeOpacity((diffx) * (diffy)*rgba.a).toInt();
+                    if (x + i < buffer_width && x + i >= 0 && y + j < buffer_height && y + j >= 0)
+                        pixels[(int)(x + i) + (int)((y + j) * buffer_width)] = strokeColor.toInt();
+
+                    if (x + i < buffer_width && x + i >= 0 && y + h + j < buffer_height && y + h + j >= 0)
+                        pixels[(int)(x + i) + (int)((y + h + j) * buffer_width)] = strokeColor.toInt();
+                }
+
+                for (int i = 0; i < h; i++)
+                {
+                    if (x + j + i < buffer_width && x + j + i >= 0 && y + i < buffer_height && y + i >= 0)
+                        pixels[(int)(x + j) + (int)((y + i) * buffer_width)] = strokeColor.toInt();
+
+                    if (x + w + j < buffer_width && x + w + j >= 0 && y + i < buffer_height && y + i >= 0)
+                        pixels[(int)(x + j + w) + (int)((y + i) * buffer_width)] = strokeColor.toInt();
+                }
+            }
+
+        // fill
+        if (isFill)
+            for (int i = 0; i < w; i++)
+            {
+                for (int j = 0; j < h; j++)
+                {
+                    // if in the bound
+                    if (x + i >= 0 && x + i < buffer_width && y + j >= 0 && y + j < buffer_height)
+                    {
+                        float diffx = x + 1 - (int)x;
+                        float diffy = y + 1 - (int)y;
+                        pixels[(((int)x) + i + (((int)y) + j) * buffer_width)] = fillColor.ChangeOpacity((diffx) * (diffy)*fillColor.a).toInt();
+                    };
                 };
-            };
-        }
+            }
     }
 
-    void drawLine(float x1, float y1, float x2, float y2, RGBA rgba)
+    void drawLine(float x1, float y1, float x2, float y2, RGBA strokeColor)
     {
         unsigned int *pixels = (unsigned int *)buffer_memory;
         // draw line
@@ -192,7 +252,7 @@ public:
                     px += 2 * (dy1 - dx1);
                 }
                 if (x >= 0 && x < buffer_width && y >= 0 && y < buffer_height)
-                    pixels[((int)x + (int)y * buffer_width)] = rgba.toInt();
+                    pixels[((int)x + (int)y * buffer_width)] = strokeColor.toInt();
             }
         }
         else
@@ -221,8 +281,54 @@ public:
                     py += 2 * (dx1 - dy1);
                 }
                 if (x >= 0 && x < buffer_width && y >= 0 && y < buffer_height)
-                    pixels[((int)x + (int)y * buffer_width)] = rgba.toInt();
+                    pixels[((int)x + (int)y * buffer_width)] = strokeColor.toInt();
             }
         }
+    }
+
+    void drawCircle(float x, float y, float r, RGBA rgba)
+    {
+        unsigned int *pixels = (unsigned int *)buffer_memory;
+        int x0 = x - r;
+        int y0 = y - r;
+        int x1 = x + r;
+        int y1 = y + r;
+        int d = 1 - r;
+        int xie = 0;
+        int yie = r;
+        int i = 0;
+        while (x < y)
+        {
+            if (d < 0)
+                d += 2 * xie + 3;
+            else
+            {
+                d += 2 * (xie - yie) + 5;
+                yie--;
+            }
+            xie++;
+            if (x0 <= xie && xie <= x1 && y0 <= yie && yie <= y1)
+                pixels[((int)xie + (int)yie * buffer_width)] = rgba.toInt();
+            if (x0 <= xie && xie <= x1 && y0 <= yie + 1 && yie + 1 <= y1)
+                pixels[((int)xie + (int)(yie + 1) * buffer_width)] = rgba.toInt();
+            if (x0 <= xie && xie <= x1 && y0 <= yie - 1 && yie - 1 <= y1)
+                pixels[((int)xie + (int)(yie - 1) * buffer_width)] = rgba.toInt();
+            if (x0 <= xie + 1 && xie + 1 <= x1 && y0 <= yie && yie <= y1)
+                pixels[((int)(xie + 1) + (int)yie * buffer_width)] = rgba.toInt();
+            if (x0 <= xie + 1 && xie + 1 <= x1 && y0 <= yie + 1 && yie + 1 <= y1)
+                pixels[((int)(xie + 1) + (int)(yie + 1) * buffer_width)] = rgba.toInt();
+            if (x0 <= xie + 1 && xie + 1 <= x1 && y0 <= yie - 1 && yie - 1 <= y1)
+                pixels[((int)(xie + 1) + (int)(yie - 1) * buffer_width)] = rgba.toInt();
+            if (x0 <= xie - 1 && xie - 1 <= x1 && y0 <= yie && yie <= y1)
+                pixels[((int)(xie - 1) + (int)yie * buffer_width)] = rgba.toInt();
+            if (x0 <= xie - 1 && xie - 1 <= x1 && y0 <= yie + 1 && yie + 1 <= y1)
+                pixels[((int)(xie - 1) + (int)(yie + 1) * buffer_width)] = rgba.toInt();
+            if (x0 <= xie - 1 && xie - 1 <= x1 && y0 <= yie - 1 && yie - 1 <= y1)
+                pixels[((int)(xie - 1) + (int)(yie - 1) * buffer_width)] = rgba.toInt();
+        }
+    }
+
+    void drawCircle2(float x, float y, float r, RGBA rgba)
+    {
     }
 };

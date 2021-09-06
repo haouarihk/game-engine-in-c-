@@ -1,21 +1,16 @@
 #include <windows.h>
+#include "window.cpp"
+
+Window window = Window();
 
 POINT Mouse;
 int MouseX, MouseY;
 
-void KeyDown(int key);
-
-#include "Engine.cpp"
-Engine engine = Engine();
-
-#include "Game.cpp"
+#include "p5.cpp"
+#include "Sketch.cpp"
 
 // winmain
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
-    engine._update = &update;
-    engine._setup = &setup;
-    // gray color
-    engine.backgroundColor = 0x808080;
-    engine.setup(hInstance, 1024, 640, L"Hello World");
+    window.init(hInstance, 640, 480, L"Hello World");
 }
